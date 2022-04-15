@@ -1,17 +1,25 @@
-import {Body, Controller, Post} from '@nestjs/common';
+import {BadRequestException, Body, Controller, Get, NotFoundException, Post, Req, Res} from '@nestjs/common';
 import {UserService} from "../user/user.service";
 import {RegisterDto} from "./register.dto";
 import * as bcrypt from 'bcrypt';
+import {LoginDto} from "./login.dto";
+import {NotFoundError} from "rxjs";
+import {JwtService} from "@nestjs/jwt";
+import {Response} from "express";
+import {Request} from "express";
 
 @Controller('auth')
 export class AuthController {
 
-    constructor(private userService: UserService) {
+    constructor(
+        private userService: UserService,
+        private jwtService: JwtService
+    ) {
     }
 
     @Post('register')
-    async register(@Body() data: RegisterDto){
-        const hashed = await bcrypt.hash(data.password,12);
+    async register(@Body() data: RegisterDto) {
+        const hashed = await bcrypt.hash(data.password, 12);
         return this.userService.create({
             "first_name": data.first_name,
             "last_name": data.last_name,
@@ -19,5 +27,37 @@ export class AuthController {
             "password": hashed
         });
     }
+
+    @Post('login')
+    async login(@Body() data: LoginDto,
+                @Res({passthrough: true}) response: Response) {
+        const user = await this.userService.findOne({email: data.email});
+        if (!user) {
+            throw new NotFoundException('Uporabnik ne obstaja');
+        }
+
+        if (!await bcrypt.compare(data.password, user.password)) {
+            throw new BadRequestException('Napačno geslo brapo');
+        }
+
+        const jwt = await this.jwtService.signAsync({id: user.id});
+
+        response.cookie('jwt', jwt, {httpOnly: true});
+
+        return user;
+
+    }
+
+
+    @Post('logout')
+    logout(@Res({passthrough:true}) response: Response){
+        response.clearCookie('jwt');
+        return{
+            message: 'Odjavljen si'
+        }
+    }
+
+
+
 
 }
